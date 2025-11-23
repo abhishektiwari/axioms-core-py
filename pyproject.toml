@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools_scm[toml]>=6.2", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axioms-core-py"
+dynamic = ["version"]
+description = "Core JWT authentication and authorization logic for Axioms packages"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Abhishek Tiwari", email = "abhishek@abhishek-tiwari.com" }
+]
+keywords = [
+    "oauth2",
+    "oidc",
+    "jwt",
+    "authentication",
+    "authorization",
+    "axioms",
+    "security",
+    "jwks",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Security",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "pyjwt>=2.8.0",
+    "jwcrypto>=1.5.0",
+    "python-box>=7.0.0",
+    "httpx>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "build>=1.0.0",
+    "twine>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/abhishektiwari/axioms-core-py"
+Repository = "https://github.com/abhishektiwari/axioms-core-py"
+Issues = "https://github.com/abhishektiwari/axioms-core-py/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+axioms_core = ["py.typed"]
+
+[tool.setuptools_scm]
+write_to = "src/axioms_core/_version.py"
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=axioms_core --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = []
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
