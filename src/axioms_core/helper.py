@@ -44,7 +44,12 @@ def check_token_validity(
     alg: str,
     audience: str,
     issuer: Optional[str] = None,
-    allowed_token_typs: Optional[List[str]] = ["JWT", "jwt", "at+jwt", "application/jwt"],
+    allowed_token_typs: Optional[List[str]] = [
+        "JWT",
+        "jwt",
+        "at+jwt",
+        "application/jwt",
+    ],
 ) -> Optional[Box]:
     """Check token validity including expiry, audience, and issuer.
 
@@ -112,13 +117,16 @@ def check_token_validity(
         typ = header.get("typ")
         if typ and typ not in allowed_token_typs:
             logger.warning(
-                f"Token type validation failed: typ={typ} not in allowed_token_typs={allowed_token_typs}{jti_info}"
+                f"Token type validation failed: typ={typ} not in "
+                f"allowed_token_typs={allowed_token_typs}{jti_info}"
             )
             return None
 
         # Explicitly verify exp claim exists
         if "exp" not in payload:
-            logger.warning(f"Token validation failed: exp claim missing from payload{jti_info}")
+            logger.warning(
+                f"Token validation failed: exp claim missing from payload{jti_info}"
+            )
             return None
 
         # Return immutable Box to prevent payload modification
