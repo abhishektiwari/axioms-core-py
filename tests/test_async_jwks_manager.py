@@ -201,8 +201,8 @@ class TestAsyncJWKSManager:
                 prefetch=True,
             )
 
-            # Wait for at least one refresh cycle
-            await asyncio.sleep(2)
+            # Wait for at least one refresh cycle (prefetch + 1 refresh + buffer)
+            await asyncio.sleep(2.5)
 
             # Should have made multiple calls (prefetch + at least one refresh)
             assert mock_client.get.call_count >= 2

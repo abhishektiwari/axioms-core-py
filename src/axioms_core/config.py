@@ -17,7 +17,7 @@ class AxiomsConfig:
 
     Example:
         Basic::
-        
+
             from axioms_core.config import AxiomsConfig
             config = AxiomsConfig(
                 AXIOMS_DOMAIN="auth.example.com",
