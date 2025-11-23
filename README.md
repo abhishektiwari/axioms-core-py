@@ -23,6 +23,10 @@ Core JWT authentication and authorization library for Python web frameworks.
 - Custom claim name support for different authorization servers
 - Comprehensive logging with JWT ID (jti) tracking
 
+## Prerequisite
+
+- Python 3.10+
+
 ## Installation
 
 ```bash
