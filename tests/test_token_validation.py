@@ -11,6 +11,7 @@ from axioms_core.helper import (
     ALLOWED_ALGORITHMS,
     check_token_validity,
     get_key_from_jwks_json,
+    validate_token_header,
 )
 
 
@@ -56,45 +57,54 @@ class TestCheckTokenValidity:
         header = pyjwt.get_unverified_header(expired_token)
         alg = header["alg"]
 
-        payload = check_token_validity(
-            token=expired_token,
-            key=rsa_keypair,
-            alg=alg,
-            audience="test-audience",
-            issuer="https://auth.example.com",
-        )
+        with pytest.raises(AxiomsError) as exc_info:
+            check_token_validity(
+                token=expired_token,
+                key=rsa_keypair,
+                alg=alg,
+                audience="test-audience",
+                issuer="https://auth.example.com",
+            )
 
-        assert payload is None
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "expired" in exc_info.value.error["error_description"].lower()
 
     def test_wrong_audience(self, token_wrong_audience, rsa_keypair):
         """Test validation with wrong audience."""
         header = pyjwt.get_unverified_header(token_wrong_audience)
         alg = header["alg"]
 
-        payload = check_token_validity(
-            token=token_wrong_audience,
-            key=rsa_keypair,
-            alg=alg,
-            audience="test-audience",
-            issuer="https://auth.example.com",
-        )
+        with pytest.raises(AxiomsError) as exc_info:
+            check_token_validity(
+                token=token_wrong_audience,
+                key=rsa_keypair,
+                alg=alg,
+                audience="test-audience",
+                issuer="https://auth.example.com",
+            )
 
-        assert payload is None
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "audience" in exc_info.value.error["error_description"].lower()
 
     def test_wrong_issuer(self, token_wrong_issuer, rsa_keypair):
         """Test validation with wrong issuer."""
         header = pyjwt.get_unverified_header(token_wrong_issuer)
         alg = header["alg"]
 
-        payload = check_token_validity(
-            token=token_wrong_issuer,
-            key=rsa_keypair,
-            alg=alg,
-            audience="test-audience",
-            issuer="https://auth.example.com",
-        )
+        with pytest.raises(AxiomsError) as exc_info:
+            check_token_validity(
+                token=token_wrong_issuer,
+                key=rsa_keypair,
+                alg=alg,
+                audience="test-audience",
+                issuer="https://auth.example.com",
+            )
 
-        assert payload is None
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "issuer" in exc_info.value.error["error_description"].lower()
 
     def test_invalid_signature(self, valid_token, rsa_keypair):
         """Test validation with invalid signature."""
@@ -104,27 +114,32 @@ class TestCheckTokenValidity:
         header = pyjwt.get_unverified_header(valid_token)
         alg = header["alg"]
 
-        payload = check_token_validity(
-            token=valid_token,
-            key=wrong_key,
-            alg=alg,
-            audience="test-audience",
-            issuer="https://auth.example.com",
-        )
+        with pytest.raises(AxiomsError) as exc_info:
+            check_token_validity(
+                token=valid_token,
+                key=wrong_key,
+                alg=alg,
+                audience="test-audience",
+                issuer="https://auth.example.com",
+            )
 
-        assert payload is None
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "signature" in exc_info.value.error["error_description"].lower()
 
     def test_malformed_token(self, rsa_keypair):
         """Test validation with malformed token."""
-        payload = check_token_validity(
-            token="not.a.valid.jwt.token",
-            key=rsa_keypair,
-            alg="RS256",
-            audience="test-audience",
-            issuer="https://auth.example.com",
-        )
+        with pytest.raises(AxiomsError) as exc_info:
+            check_token_validity(
+                token="not.a.valid.jwt.token",
+                key=rsa_keypair,
+                alg="RS256",
+                audience="test-audience",
+                issuer="https://auth.example.com",
+            )
 
-        assert payload is None
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
 
     def test_token_missing_exp(self, rsa_keypair):
         """Test validation with token missing exp claim."""
@@ -146,15 +161,18 @@ class TestCheckTokenValidity:
         token_str = token.serialize()
 
         # This should fail because exp is required
-        payload = check_token_validity(
-            token=token_str,
-            key=rsa_keypair,
-            alg="RS256",
-            audience="test-audience",
-            issuer="https://auth.example.com",
-        )
+        with pytest.raises(AxiomsError) as exc_info:
+            check_token_validity(
+                token=token_str,
+                key=rsa_keypair,
+                alg="RS256",
+                audience="test-audience",
+                issuer="https://auth.example.com",
+            )
 
-        assert payload is None
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "expiration" in exc_info.value.error["error_description"].lower()
 
     def test_frozen_box_immutable(self, valid_token, rsa_keypair):
         """Test that returned payload is immutable (frozen Box)."""
@@ -221,6 +239,229 @@ class TestGetKeyFromJWKSJson:
                 get_key_from_jwks_json("test-key-id", config_dict)
 
             assert exc_info.value.status_code == 401
+
+
+class TestValidateTokenHeader:
+    """Test validate_token_header function."""
+
+    def test_valid_token_header(self, valid_token):
+        """Test validation of a valid token header."""
+        header = validate_token_header(valid_token)
+
+        assert header is not None
+        assert header.get("alg") in ALLOWED_ALGORITHMS
+        assert header.get("kid") == "test-key-id"
+
+    def test_valid_token_header_with_typ(self, valid_token):
+        """Test validation of token header with valid typ."""
+        header = validate_token_header(valid_token)
+
+        assert header is not None
+        # typ should be JWT or similar
+        typ = header.get("typ")
+        if typ:
+            assert typ in ["JWT", "jwt", "at+jwt", "application/jwt"]
+
+    def test_valid_token_header_custom_allowed_typs(self, valid_token):
+        """Test validation with custom allowed token types."""
+        header = validate_token_header(
+            valid_token, allowed_token_typs=["JWT", "at+jwt"]
+        )
+
+        assert header is not None
+        assert header.get("alg") in ALLOWED_ALGORITHMS
+
+    def test_malformed_token(self):
+        """Test validation with malformed token."""
+        with pytest.raises(AxiomsError) as exc_info:
+            validate_token_header("not.a.valid.jwt.token")
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "malformed" in exc_info.value.error["error_description"].lower()
+
+    def test_invalid_token_header(self):
+        """Test validation with completely invalid token."""
+        with pytest.raises(AxiomsError) as exc_info:
+            validate_token_header("invalid")
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+
+    def test_token_missing_algorithm(self, rsa_keypair):
+        """Test validation with token missing algorithm in header."""
+        import base64
+        import json
+
+        now = int(time.time())
+        payload_data = {
+            "sub": "test-user",
+            "aud": "test-audience",
+            "iss": "https://auth.example.com",
+            "iat": now,
+            "exp": now + 3600,
+        }
+
+        # Manually craft token with header missing alg
+        header = {"kid": "test-key-id"}  # Missing alg
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).rstrip(b"=")
+        payload_b64 = base64.urlsafe_b64encode(
+            json.dumps(payload_data).encode()
+        ).rstrip(b"=")
+
+        # Create a fake token (signature doesn't matter for header validation)
+        fake_token = f"{header_b64.decode()}.{payload_b64.decode()}.fake_signature"
+
+        with pytest.raises(AxiomsError) as exc_info:
+            validate_token_header(fake_token)
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "algorithm" in exc_info.value.error["error_description"].lower()
+
+    def test_token_invalid_algorithm(self, rsa_keypair):
+        """Test validation with invalid/insecure algorithm."""
+
+        now = int(time.time())
+        payload_data = {
+            "sub": "test-user",
+            "aud": "test-audience",
+            "iss": "https://auth.example.com",
+            "iat": now,
+            "exp": now + 3600,
+        }
+
+        # Try to create a token with HS256 (symmetric - not allowed)
+        # Note: We'll manually craft this since jwcrypto won't sign with wrong key type
+        import base64
+        import json
+
+        header = {"alg": "HS256", "kid": "test-key-id"}
+        header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).rstrip(b"=")
+        payload_b64 = base64.urlsafe_b64encode(
+            json.dumps(payload_data).encode()
+        ).rstrip(b"=")
+
+        # Create a fake token (signature doesn't matter for header validation)
+        fake_token = f"{header_b64.decode()}.{payload_b64.decode()}.fake_signature"
+
+        with pytest.raises(AxiomsError) as exc_info:
+            validate_token_header(fake_token)
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "algorithm" in exc_info.value.error["error_description"].lower()
+
+    def test_token_missing_kid(self, rsa_keypair):
+        """Test validation with token missing kid in header."""
+        from jwcrypto import jwt
+
+        now = int(time.time())
+        payload_data = {
+            "sub": "test-user",
+            "aud": "test-audience",
+            "iss": "https://auth.example.com",
+            "iat": now,
+            "exp": now + 3600,
+        }
+
+        # Create token without kid
+        token = jwt.JWT(
+            header={"alg": "RS256"},  # Missing kid
+            claims=payload_data,
+        )
+        token.make_signed_token(rsa_keypair)
+        token_str = token.serialize()
+
+        with pytest.raises(AxiomsError) as exc_info:
+            validate_token_header(token_str)
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "key id" in exc_info.value.error["error_description"].lower()
+
+    def test_token_invalid_typ(self, rsa_keypair):
+        """Test validation with invalid token type."""
+        from jwcrypto import jwt
+
+        now = int(time.time())
+        payload_data = {
+            "sub": "test-user",
+            "aud": "test-audience",
+            "iss": "https://auth.example.com",
+            "iat": now,
+            "exp": now + 3600,
+        }
+
+        # Create token with invalid typ
+        token = jwt.JWT(
+            header={"alg": "RS256", "kid": "test-key-id", "typ": "invalid_type"},
+            claims=payload_data,
+        )
+        token.make_signed_token(rsa_keypair)
+        token_str = token.serialize()
+
+        with pytest.raises(AxiomsError) as exc_info:
+            validate_token_header(token_str, allowed_token_typs=["JWT", "at+jwt"])
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error["error"] == "invalid_token"
+        assert "token type" in exc_info.value.error["error_description"].lower()
+
+    def test_token_valid_typ_in_custom_list(self, rsa_keypair):
+        """Test validation with valid typ in custom allowed list."""
+        from jwcrypto import jwt
+
+        now = int(time.time())
+        payload_data = {
+            "sub": "test-user",
+            "aud": "test-audience",
+            "iss": "https://auth.example.com",
+            "iat": now,
+            "exp": now + 3600,
+        }
+
+        # Create token with custom typ
+        token = jwt.JWT(
+            header={"alg": "RS256", "kid": "test-key-id", "typ": "custom+jwt"},
+            claims=payload_data,
+        )
+        token.make_signed_token(rsa_keypair)
+        token_str = token.serialize()
+
+        # Should succeed with custom typ in allowed list
+        header = validate_token_header(token_str, allowed_token_typs=["custom+jwt"])
+
+        assert header is not None
+        assert header.get("typ") == "custom+jwt"
+
+    def test_token_no_typ_header(self, rsa_keypair):
+        """Test validation when typ is not present in header (should pass)."""
+        from jwcrypto import jwt
+
+        now = int(time.time())
+        payload_data = {
+            "sub": "test-user",
+            "aud": "test-audience",
+            "iss": "https://auth.example.com",
+            "iat": now,
+            "exp": now + 3600,
+        }
+
+        # Create token without typ (valid - typ is optional)
+        token = jwt.JWT(
+            header={"alg": "RS256", "kid": "test-key-id"},
+            claims=payload_data,
+        )
+        token.make_signed_token(rsa_keypair)
+        token_str = token.serialize()
+
+        # Should succeed even without typ
+        header = validate_token_header(token_str)
+
+        assert header is not None
+        assert header.get("alg") == "RS256"
+        assert header.get("kid") == "test-key-id"
 
 
 class TestAllowedAlgorithms:

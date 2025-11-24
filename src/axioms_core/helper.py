@@ -38,30 +38,128 @@ ALLOWED_ALGORITHMS = frozenset(
 )
 
 
+def validate_token_header(
+    token: str,
+    allowed_token_typs: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Validate JWT token header and extract algorithm and key ID.
+
+    Validates that the token header contains:
+    - A valid algorithm from ALLOWED_ALGORITHMS (prevents algorithm confusion attacks)
+    - A key ID (kid) for JWKS key lookup
+    - A valid token type (typ) if present
+
+    Args:
+        token: JWT token string to validate.
+        allowed_token_typs: Optional list of allowed token types.
+            Defaults to ["JWT", "jwt", "at+jwt", "application/jwt"].
+
+    Returns:
+        dict: Token header containing 'alg', 'kid', and optionally 'typ'.
+
+    Raises:
+        AxiomsError: If token header is invalid, malformed, has invalid algorithm,
+                    is missing key ID, or has invalid token type.
+    """
+    if allowed_token_typs is None:
+        allowed_token_typs = ["JWT", "jwt", "at+jwt", "application/jwt"]
+
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.DecodeError as e:
+        logger.warning(f"Token header decode failed: {e}")
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Malformed token header",
+            },
+            401,
+        )
+    except Exception as e:
+        logger.error(f"Token header validation failed: {e}")
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Invalid token header",
+            },
+            401,
+        )
+
+    # Validate algorithm
+    alg = header.get("alg")
+    if not alg:
+        logger.warning("Token header missing algorithm")
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Token header missing algorithm",
+            },
+            401,
+        )
+
+    if alg not in ALLOWED_ALGORITHMS:
+        logger.warning(
+            f"Token algorithm validation failed: {alg} not in ALLOWED_ALGORITHMS"
+        )
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": f"Invalid or unsupported algorithm: {alg}",
+            },
+            401,
+        )
+
+    # Validate key ID presence
+    kid = header.get("kid")
+    if not kid:
+        logger.warning("Token header missing key ID")
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Token header missing key ID",
+            },
+            401,
+        )
+
+    # Validate token type (typ) if present
+    typ = header.get("typ")
+    if typ and typ not in allowed_token_typs:
+        logger.warning(
+            f"Token type validation failed: typ={typ} not in "
+            f"allowed_token_typs={allowed_token_typs}"
+        )
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": f"Invalid token type: {typ}",
+            },
+            401,
+        )
+
+    return header
+
+
 def check_token_validity(
     token: str,
     key,
     alg: str,
     audience: str,
     issuer: Optional[str] = None,
-    allowed_token_typs: Optional[List[str]] = [
-        "JWT",
-        "jwt",
-        "at+jwt",
-        "application/jwt",
-    ],
-) -> Optional[Box]:
+) -> Box:
     """Check token validity including expiry, audience, and issuer.
 
     Validates JWT token with comprehensive security checks:
     - Signature verification using JWKS public key
     - Algorithm validation (only secure asymmetric algorithms allowed)
-    - Token type validation (typ header must be in allowed_token_typs)
     - Expiration time (exp claim must exist and be valid)
     - Audience (aud claim must match provided audience)
     - Issuer (iss claim validated if issuer provided)
     - Issued at time (iat claim)
     - Not before time (nbf claim if present)
+
+    Note:
+        Token header validation (algorithm, kid, typ) should be performed separately
+        using validate_token_header() before calling this function.
 
     Args:
         token: JWT token string to validate.
@@ -69,12 +167,12 @@ def check_token_validity(
         alg: Algorithm from token header (already validated against ALLOWED_ALGORITHMS).
         audience: Expected audience value.
         issuer: Optional expected issuer value.
-        allowed_token_typs: Optional list of allowed token types.
-            Defaults to ["JWT", "jwt", "at+jwt", "application/jwt"].
 
     Returns:
-        Box or None: Immutable (frozen) Box containing validated payload if valid,
-                     None if validation fails.
+        Box: Immutable (frozen) Box containing validated payload.
+
+    Raises:
+        AxiomsError: If token validation fails, with RFC 6750 compliant error details.
     """
     try:
         # Convert JWK to PyJWT-compatible key
@@ -108,51 +206,92 @@ def check_token_validity(
             options=options,
         )
 
-        header = decoded["header"]
         payload = decoded["payload"]
         jti = payload.get("jti")
         jti_info = f" jti={jti}" if jti else ""
-
-        # Validate token type (typ header)
-        typ = header.get("typ")
-        if typ and typ not in allowed_token_typs:
-            logger.warning(
-                f"Token type validation failed: typ={typ} not in "
-                f"allowed_token_typs={allowed_token_typs}{jti_info}"
-            )
-            return None
 
         # Explicitly verify exp claim exists
         if "exp" not in payload:
             logger.warning(
                 f"Token validation failed: exp claim missing from payload{jti_info}"
             )
-            return None
+            raise AxiomsError(
+                {
+                    "error": "invalid_token",
+                    "error_description": "Token missing expiration claim",
+                },
+                401,
+            )
 
         # Return immutable Box to prevent payload modification
         return Box(payload, frozen_box=True)
 
+    except AxiomsError:
+        # Re-raise AxiomsError as-is
+        raise
     except jwt.ExpiredSignatureError as e:
         logger.warning(f"Token validation failed: expired signature - {e}")
-        return None
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Token has expired",
+            },
+            401,
+        )
     except jwt.InvalidAudienceError as e:
         logger.warning(f"Token validation failed: invalid audience - {e}")
-        return None
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Invalid token audience",
+            },
+            401,
+        )
     except jwt.InvalidIssuerError as e:
         logger.warning(f"Token validation failed: invalid issuer - {e}")
-        return None
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Invalid token issuer",
+            },
+            401,
+        )
     except jwt.InvalidSignatureError as e:
         logger.warning(f"Token validation failed: invalid signature - {e}")
-        return None
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Invalid token signature",
+            },
+            401,
+        )
     except jwt.DecodeError as e:
         logger.warning(f"Token validation failed: decode error - {e}")
-        return None
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Malformed token",
+            },
+            401,
+        )
     except jwt.InvalidTokenError as e:
         logger.warning(f"Token validation failed: invalid token - {e}")
-        return None
+        raise AxiomsError(
+            {
+                "error": "invalid_token",
+                "error_description": "Invalid access token",
+            },
+            401,
+        )
     except Exception as e:
         logger.error(f"Token validation failed: unexpected error - {e}")
-        return None
+        raise AxiomsError(
+            {
+                "error": "server_error",
+                "error_description": "Token validation error",
+            },
+            500,
+        )
 
 
 def check_claims(

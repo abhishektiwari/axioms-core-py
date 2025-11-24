@@ -21,6 +21,7 @@ from .helper import (
     get_token_permissions,
     get_token_roles,
     get_token_scopes,
+    validate_token_header,
 )
 from .jwks import (
     AsyncJWKSManager,
@@ -54,6 +55,7 @@ __all__ = [
     "initialize_jwks_manager",
     "shutdown_async_jwks_manager",
     "shutdown_jwks_manager",
+    "validate_token_header",
 ]
 
 try:

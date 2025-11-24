@@ -4,6 +4,7 @@ import time
 from unittest.mock import MagicMock, patch
 
 import jwt as pyjwt
+import pytest
 
 from axioms_core import (
     check_permissions,
@@ -14,6 +15,7 @@ from axioms_core import (
     initialize_jwks_manager,
     shutdown_jwks_manager,
 )
+from axioms_core.errors import AxiomsError
 
 
 class TestEndToEndFlow:
@@ -122,15 +124,17 @@ class TestEndToEndFlow:
             key = get_key_from_jwks_json(kid, config_dict)
 
             # Validate token (should fail)
-            payload = check_token_validity(
-                token=expired_token,
-                key=key,
-                alg=alg,
-                audience="test-audience",
-                issuer="https://auth.example.com",
-            )
+            with pytest.raises(AxiomsError) as exc_info:
+                check_token_validity(
+                    token=expired_token,
+                    key=key,
+                    alg=alg,
+                    audience="test-audience",
+                    issuer="https://auth.example.com",
+                )
 
-            assert payload is None
+            assert exc_info.value.status_code == 401
+            assert exc_info.value.error["error"] == "invalid_token"
 
     def test_authorization_failure_flow(
         self, valid_token, rsa_keypair, config_dict, mock_jwks_response
