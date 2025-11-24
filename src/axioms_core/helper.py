@@ -579,7 +579,7 @@ def get_key_from_jwks_json(
         if key is None:
             raise AxiomsError(
                 {
-                    "error": "unauthorized_access",
+                    "error": "invalid_token",
                     "error_description": "Invalid access token",
                 },
                 401,
@@ -592,7 +592,7 @@ def get_key_from_jwks_json(
     except Exception:
         raise AxiomsError(
             {
-                "error": "unauthorized_access",
+                "error": "invalid_token",
                 "error_description": "Invalid access token",
             },
             401,
